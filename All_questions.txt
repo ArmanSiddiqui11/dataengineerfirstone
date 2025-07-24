@@ -1,0 +1,678 @@
+CODES OF ALL QUESTIONS 
+
+----------------------------------------------------------------------------------------------------------------
+QUERY 1 -----
+
+sparkscala output for 1st question 
+
+import org.apache.spark.sql.functions._
+import org.apache.spark.sql.expressions.Window
+val df = spark.read.option("header", "true").option("inferSchema", "true").csv("path/to/credit_card_transactions.csv")
+val processedDf = df.withColumn("month", date_format(col("transaction_date"), "yyyy-MM"))
+val monthlySpend = processedDf.groupBy("card_type", "month").agg(sum("amount").alias("total_spent"))
+val windowSpec = Window.partitionBy("card_type").orderBy(col("total_spent").desc)
+val ranked = monthlySpend.withColumn("rank", row_number().over(windowSpec)).filter(col("rank") === 1).select("card_type", "month", "total_spent")
+ranked.show() 
+ranked.write.csv("C://Users//susarika//Downloads//scala1output")
+
+
+HIVE
+
+WITH city_spends AS (
+  SELECT city, SUM(amount) AS total_spend
+  FROM credit_card_transactions
+  GROUP BY city
+),
+total_spend AS (
+  SELECT SUM(amount) AS total_amount
+  FROM my_data
+)
+SELECT 
+  cs.city, 
+  cs.total_spend, 
+  ROUND(cs.total_spend / ts.total_amount * 100, 2) AS percentage_contribution
+FROM city_spends cs
+CROSS JOIN total_spend ts
+ORDER BY cs.total_spend DESC
+LIMIT 5;
+
+
+PYSPARK DF
+
+
+transactions = spark.read.csv("/content/Sprint Data/Credit card transactions - India - Simple.csv", header=True, inferSchema=True)
+
+transactions.show(5)
+transactions.printSchema()
+
+from pyspark.sql.functions import col, sum as sumAmount, round
+
+citySpend = transactions.groupBy("City").agg(sumAmount("Amount").alias("City Total"))
+
+totalSpend = citySpend.agg(sumAmount("City Total").alias("total")).collect()[0]["total"]
+
+citySpendWithPercent = citySpend.withColumn("Percentage", round((col("City Total") / totalSpend) * 100, 2))
+
+top5Cities = citySpendWithPercent.orderBy(col("City Total").desc()).limit(5)
+
+top5Cities.show()
+
+
+top5Cities.coalesce(1).write.mode("overwrite").option("header", True).csv("/content/Sprint Data/top5cities_spend_percentage")
+
+transactions.persist().is_cached
+
+
+----------------------------------------------------------------------------------------------------------------
+QUERY 2 -----
+
+Spark Scala
+
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.functions._
+import org.apache.spark.sql.expressions.Window
+val spark = SparkSession.builder().appName("Highest Spend Month by Card Type").getOrCreate()
+val data = spark.read.option("header", "true").option("inferSchema", "true").csv("C://Users//susarika//Downloads//Credit_card_transaction.csv")
+val formatteddata = data.withColumn("date_parsed", to_date(col("Date"), "d-MMM-yy")).withColumn("month", date_format(col("date_parsed"), "MMM"))
+val monthlySpend = formatteddata.groupBy("Card Type", "month").agg(sum("Amount").alias("total_spent"))
+val windowSpec = Window.partitionBy("Card Type").orderBy(col("total_spent").desc)
+val result = monthlySpend.withColumn("rank", row_number().over(windowSpec)).filter(col("rank") === 1).select("Card Type", "month", "total_spent")
+result.show()
+result.write.csv("C://Users//susarika//Downloads//scala2output")
+
+HIVE
+
+SELECT card_type, month, amount_spent
+FROM (
+  SELECT card_type, month, amount_spent,
+         ROW_NUMBER() OVER (PARTITION BY card_type ORDER BY amount_spent DESC) as rank
+  FROM my_data
+) subquery
+WHERE rank = 1;
+
+
+PYSPARK 
+
+months = spark.read.csv("/content/Sprint Data/Credit card transactions - India - Simple.csv", header=True, inferSchema=True)
+
+months.show(5)
+months.printSchema()
+
+from pyspark.sql.functions import sum, col, to_date, date_format, lit
+
+dfWithMonth = months.withColumn("Month", date_format(to_date("Date", "d-MMM-yy"), "MMM-yyyy"))
+
+monthSpend = dfWithMonth.groupBy("Month").agg(sum("Amount").alias("monthTotal"))
+
+highestMonth = monthSpend.orderBy(col("monthTotal").desc()).first()["Month"]
+
+filteredMonthData = dfWithMonth.filter(col("Month") == highestMonth)
+
+cardTypeSpend = filteredMonthData.groupBy("Month", "Card Type").agg(sum("Amount").alias("Amount"))
+
+totalAmount = cardTypeSpend.agg(sum("Amount").alias("Amount"))
+totalRow = totalAmount.withColumn("Month", lit(highestMonth)).withColumn("Card Type", lit("Total"))
+
+finalOutput = totalRow.select("Month", "Card Type", "Amount").unionByName(cardTypeSpend.select("Month", "Card Type", "Amount"))
+
+finalOutput = finalOutput.orderBy(col("Card Type").desc())
+
+finalOutput.show()
+
+finalOutput.coalesce(1).write.mode("overwrite").option("header", True).csv("/content/Sprint Data/month_with_most_spent")
+
+months.persist().is_cached
+
+
+
+----------------------------------------------------------------------------------------------------------------
+QUERY 3 -----
+
+SPARKSCALA
+val windata = Window.partitionBy("Card Type").orderBy("Date").rowsBetween(Window.unboundedPreceding, Window.currentRow)
+
+val dfwithvalue = data.withColumn("totalSpend", sum("Amount").over(windata))
+
+val reacheddata = dfwithvalue.filter(col("totalSpend")>=1000000).groupBy("Card Type")
+
+val reacheddata = dfwithvalue.filter(col("totalSpend")>=1000000).groupBy("Card Type").agg(min("index").alias("min_index"))
+
+val result1 = dfwithvalue.join(reacheddata, "Card Type").filter(col("in
+dex") <= col("min_index")).drop("totalSpend", "min_index")
+
+result1.show()
+
+result1.write.option("header", "true").csv("C:/Users/ROGOYAL/Downloads/
+Spring Project/Answers/3Question/ques3Output.csv")
+
+
+HIVE
+
+SELECT *
+FROM (
+  SELECT *,
+         SUM(spends) OVER (PARTITION BY card_type ORDER BY transaction_date) AS cumulative_spends
+  FROM my_data
+) subquery
+WHERE cumulative_spends >= 1000000;
+
+
+PYSPARK DF
+
+cumulativeDF = spark.read.csv("/content/Sprint Data/Credit card transactions - India - Simple.csv", header=True, inferSchema=True)
+
+from pyspark.sql.window import Window
+from pyspark.sql.functions import sum, col, row_number
+
+cardTypeWindow = Window.partitionBy("Card Type").orderBy("Date").rowsBetween(Window.unboundedPreceding, Window.currentRow)
+
+cumulativeSpendDF = cumulativeDF.withColumn("cumulativeAmount", sum("Amount").over(cardTypeWindow))
+
+filteredDF = cumulativeSpendDF.filter(col("cumulativeAmount") >= 1000000)
+
+rowWindow = Window.partitionBy("Card Type").orderBy("Date")
+resultDF = filteredDF.withColumn("rowNum", row_number().over(rowWindow)) \
+                     .filter(col("rowNum") == 1) \
+                     .drop("rowNum")
+
+resultDF.show(truncate=False)
+
+resultDF.coalesce(1).write.mode("overwrite").option("header", True).csv("/content/Sprint Data/more_than_1000000_data")
+
+cumulativeDF.persist().is_cached
+
+
+----------------------------------------------------------------------------------------------------------------
+QUERY 4 -----
+
+SPARKSCALA
+import org.apache.spark.sql.SparkSession
+
+val spark = SparkSession.builder.appName("spark with scala example").master("local[*]").getOrCreate()
+
+val data = spark.read.option("header", "true").csv("C:/Uses/ROGOYAL/Downloads/Spring Project/Simple.csv")
+
+data.write.option("header", "true").partitionBy("Card Type").mode("overwrite").csv("C:/Users/ROGOYAL/Downloads/Spring Project/outputfiles/cardtype.csv")
+
+val gdata = spark.read.option("header", "true").csv("C:/Users/ROGOYAL/Downloads/Sp
+ring Project/outputfiles/cardtype.csv/Card%20Type=Gold/part-0000
+0-215b581d-9801-4658-8401-da1b2ead83e5.c000.csv")
+
+val gtdata = gdata.groupBy("City").agg(sum("Amount").alia
+s("Spend"))
+
+val gtpdata = gtdata.agg(sum("Spend")).first().getDouble(
+0)
+
+val gtperdata = gtdata.withColumn("spendPercentage", col(
+"Spend")/ lit(gtpdata) * 100)
+
+val gtmindata = gtperdata.orderBy("spendPercentage").limit(1)
+
+gtmindata.show()
+
+gtmindata.write.option("header", "true").csv("C:/Users/ROG
+OYAL/Downloads/Spring Project/Answers/4Question/4quesOutput.csv"
+)
+
+HIVE
+
+SELECT city, 
+       SUM(CASE WHEN card_type = 'Gold' THEN spend ELSE 0 END) / SUM(spend) AS gold_spend_percentage
+FROM my_data
+GROUP BY city
+ORDER BY gold_spend_percentage ASC
+LIMIT 1;
+
+PYSPARK
+
+lowestDF = spark.read.csv("/content/Sprint Data/Credit card transactions - India - Simple.csv", header=True, inferSchema=True)
+
+goldDF = lowestDF.filter(col("Card Type") == "Gold")
+
+citySpendDF = goldDF.groupBy("City").agg(sum("Amount").alias("Gold Spend"))
+
+totalGoldSpend = goldDF.agg(sum("Amount").alias("totalGold")).collect()[0]["totalGold"]
+
+lowestGoldCity = citySpendDF.withColumn(
+    "percentage",
+    round((col("Gold Spend") / totalGoldSpend) * 100, 3)
+).orderBy("Gold Spend").limit(1)
+
+lowestGoldCity.show()
+
+lowestGoldCity.coalesce(1).write.mode("overwrite").option("header", True).csv("/content/Sprint Data/lowest_gold_city")
+
+lowestGoldCity.persist().is_cached
+
+
+----------------------------------------------------------------------------------------------------------------
+QUERY 5 -----
+
+SPARKSCALA
+data.write.option("header", "true").orc("C:/Users/ROGOYAL/Downloads/Spring project/Answers/5Question/data.orc")
+
+val dataorc = spark.read.option("header", "true").orc("C:/Users/ROGOYAL/Downloads/SpringProject/Answers/5Question/data.orc/part-00000-4e2a2ccb-75b0-41a4-a55f-0ede92f53736-c000.zstd.orc")
+
+import org.apache.spark.sql.functions._
+import org.apache.spark.sql.expressions.Window
+
+val desccity = Window.partitionBy("City").orderBy(col("Amount").desc)
+
+val asccity = Window.partitionBy("City").orderBy(col("Amount").asc)
+
+val descasc = dataorc.withColumn("highest_expense", first("Exp Type").o
+ver(desccity)).withColumn("lowest_expense", first("Exp Type").over(asccity))
+
+val result = descasc.select("City", "highest_expense", "lowest_expense").distinct()
+
+result.show()
+
+result.write.option("header", "true").csv("C:/Users/ROGOYAL/Downloads/S
+pring Project/Answers/5Question/5quesOutput.csv")
+
+Hive 
+
+WITH city_expense_totals AS (
+    SELECT city, exptype,SUM(amount) AS total_amount
+    FROM my_data
+    GROUP BY city, exptype),
+ranked_expense_types AS (
+    SELECT  city,exptype,total_amount,RANK() OVER (PARTITION BY city ORDER BY total_amount DESC) AS     rank_desc,RANK() OVER (PARTITION BY city ORDER BY total_amount ASC) AS rank_asc
+    FROM city_expense_total),
+max_min_expense AS (
+    SELECT city,MAX(CASE WHEN rank_desc = 1 THEN exptype END) AS highest_expense_type,
+        MAX(CASE WHEN rank_asc = 1 THEN exptype END) AS lowest_expense_type
+    FROM ranked_expense_types
+    GROUP BY city)
+SELECT * FROM max_min_expense;
+
+PYSPARK
+
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, row_number
+from pyspark.sql.window import Window
+
+spark = SparkSession.builder \
+    .appName("CreditCardAnalytics") \
+    .getOrCreate()
+df = spark.read.option("header", "true").option("inferSchema", "true").csv("C:/Users/arman/Downloads/credit_card_expenses.csv")
+
+
+agg_df = df.groupBy("city", "expense_type") .sum("amount") .withColumnRenamed("sum(amount)", "total_amount")
+
+window_desc = Window.partitionBy("city").orderBy(col("total_amount").desc())
+window_asc = Window.partitionBy("city").orderBy(col("total_amount").asc())
+
+
+highest_df = agg_df.withColumn("rank_desc", row_number().over(window_desc)) \
+                   .filter(col("rank_desc") == 1) \
+                   .select("city", col("expense_type").alias("highest_expense_type"))
+
+lowest_df = agg_df.withColumn("rank_asc", row_number().over(window_asc)) \
+                  .filter(col("rank_asc") == 1) \
+                  .select("city", col("expense_type").alias("lowest_expense_type"))
+
+result_df = highest_df.join(lowest_df, on="city", how="inner")
+
+result_df.show()
+result_df.write.mode("overwrite").option("header", "true").csv("C:/Users/arman/Donwloads/expense_by_city")
+
+----------------------------------------------------------------------------------------------------------------
+QUERY 6 -----
+
+SPARKSCALA - RDD
+import org.apache.spark.sql.SparkSession
+val spark = SparkSession.builder.appName("spark with scala example").master("local[*]").getOrCreate()
+val df = spark.read.option("header", "true").option("inferSchema", "true").option("multiLine", "true").option("quote", "\"").option("escape", "\"").csv("C:/Users/ROGOYAL/Downloads/Spring Project/Simple.csv")
+
+val cleanedDF = df.selectExpr("`Exp Type` as expType", "Gender as gende
+r", "Amount as amount").filter("expType is not null and gender is not null and
+ amount is not null")
+
+val rdd = cleanedDF.rdd.map(row => {
+     |   val expType = row.getString(0)
+     |   val gender = row.getString(1)
+     |   val amount = row.get(2) match {
+     |     case d: Double => d
+     |     case i: Int => i.toDouble
+     |     case l: Long => l.toDouble
+     |     case f: Float => f.toDouble
+     |     case s: String => s.toDouble
+     |     case other => throw new RuntimeException(s"Unexpected type: $other")
+     | }
+     |   (expType, gender, amount)
+     | })
+
+val totalByExpType = rdd.map { case (expType, _, amount) => (expType, amount) }.reduceByKey(_ + _)
+
+val femaleByExpType = rdd.filter { case (_, gender, _) => gender == "F"}.map { case (expType, _, amount) => (expType, amount) }.reduceByKey(_ + _)
+
+val percentageByExpType = femaleByExpType.join(totalByExpType).mapValues { case (femaleAmt, totalAmt) => (femaleAmt / totalAmt) * 100 }
+
+percentageByExpType.collect().foreach {case (expType, percent) =>printl
+n(f"$expType: $percent%.2f%%")}
+
+val output = percentageByExpType.map {case (expType, percent) => f"$exp
+Type: $percent%.2f%%"}
+
+output.saveAsTextFile("C:/Users/ROGOYAL/Downloads/Spring Project/Answer
+s/6Question/6quesOutput.txt")
+
+hive 
+
+WITH total_expense AS (
+    SELECT exptype,SUM(amount) AS total_amount
+    FROM my_data
+    GROUP BY exptype),
+female_expense AS (
+    SELECT exptype,SUM(amount) AS female_amount
+    FROM my_data
+    WHERE gender = 'F'
+    GROUP BY exptype),
+percentage_contribution AS (
+    SELECT  t.exptype,COALESCE(f.female_amount, 0) AS female_amount,t.total_amount,
+        ROUND((COALESCE(f.female_amount, 0) / t.total_amount) * 100, 2) AS female_percentage
+    FROM total_expense t
+    LEFT JOIN female_expense f ON t.exptype = f.exptype
+)
+SELECT * FROM percentage_contribution; 
+
+
+SPARKSCALA--DATAFRAME
+
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.functions._
+
+val spark = SparkSession.builder()
+  .appName("FemaleSpendPercentage")
+  .getOrCreate()
+val df = spark.read
+  .option("header", "true")
+  .option("inferSchema", "true")
+  .csv("C:/Users/arman/Donwloads/credit_card_expenses.csv")
+
+val totalByType = df.groupBy("expense_type")
+  .agg(sum("amount").alias("total_amount"))
+
+
+val femaleByType = df.filter(col("gender") === "Female")
+  .groupBy("expense_type")
+  .agg(sum("amount").alias("female_amount"))
+
+
+val percentageDF = femaleByType.join(totalByType, "expense_type")
+  .withColumn("female_percent", round(col("female_amount") / col("total_amount") * 100, 2))
+
+percentageDF.select("expense_type", "female_percent").show()
+
+percentageDF.select("expense_type", "female_percent")
+  .write
+  .option("header", "true")
+  .mode("overwrite")
+  .csv("C:/Users/arman/Donwloads/female_spend_percentage")
+
+
+
+----------------------------------------------------------------------------------------------------------------
+QUERY 7 -----
+
+SPARKSCALA
+import org.apache.spark.sql.functions._
+import org.apache.spark.sql.expressions.Window
+
+val df = mydforc.withColumn("ParsedDate",
+  coalesce(to_date(col("Date"), "d-MMM-yy"), to_date(col("Date"), "dd-MMM-yy"))
+)
+
+
+val dfWithYM = df.withColumn("month", month(col("ParsedDate"))).withColumn("year", year(col("ParsedDate")))
+
+
+val monthlySpend = dfWithYM.groupBy("Card Type", "Exp Type", "year", "month").agg(sum("Amount").alias("MonthlyAmount"))
+
+
+val windSpec = Window.partitionBy("Card Type", "Exp Type").orderBy("year", "month")
+
+val withLag = monthlySpend.withColumn("PrevMonthAmount", lag("MonthlyAmount", 1).over(windSpec))
+val withGrowth = withLag.withColumn("MoMGrowth", 
+  (col("MonthlyAmount") - col("PrevMonthAmount")) / col("PrevMonthAmount")
+)
+
+
+val jan2014 = withGrowth.filter(col("year") === 2014 && col("month") === 1)
+
+
+val topGrowthCombo = jan2014.orderBy(col("MoMGrowth").desc).limit(1)
+
+topGrowthCombo.show()
+
+
+PYSPARK
+>>> from pyspark.sql import functions as F
+>>> from pyspark.sql import Window
+>>> mydf = spark.read.csv("C:/Users/ROGOYAL/Downloads/Spring Project/Simple.csv", inferSchema = True,header = True)
+>>> mydf1 = mydf.withColumn("year", F.year("Date")).withColumn("month", F.month("Date"))
+>>> mydf = mydf.withColumn("month", F.month("ParsedDate"))
+>>> monthly_spend = mydf.groupBy("Card Type", "Exp Type", "year", "month").agg(F.sum("Amount").alias("MonthlyAmount"))
+>>> window_spec = Window.partitionBy("Card Type", "Exp Type").orderBy("year", "month")
+>>> monthly_spend = monthly_spend.withColumn("PrevMonthAmount", F.lag("MonthlyAmount").over(window_spec)).withColumn("MoMGrowth",((F.col("MonthlyAmount") - F.col("PrevMonthAmount")) / F.col("PrevMonthAmount")))
+>>> jan2014 = monthly_spend.filter((F.col("year") == 2014) & (F.col("month") == 1))
+>>> top_combo = jan2014.orderBy(F.desc("MoMGrowth")).limit(1)
+>>> top_combo.show()
+
+hive 
+
+WITH formatted_data AS (
+    SELECT cardtype,exptype, from_unixtime(unix_timestamp(datefor, 'dd-MMM-yy'), 'yyyy-MM') AS year_month,amount
+    FROM my_data),
+monthly_aggregates AS (
+    SELECT  cardtype,exptype,year_month,SUM(amount) AS total_amount
+    FROM formatted_data
+    WHERE year_month IN ('2013-12', '2014-01')
+    GROUP BY cardtype, exptype, year_month),
+pivoted_data AS (
+    SELECT   cardtype,exptype,
+        MAX(CASE WHEN year_month = '2013-12' THEN total_amount ELSE 0 END) AS dec_amount,
+        MAX(CASE WHEN year_month = '2014-01' THEN total_amount ELSE 0 END) AS jan_amount
+    FROM monthly_aggregates
+    GROUP BY cardtype, exptype),
+growth_calc AS (
+    SELECT  cardtype,exptype,dec_amount,jan_amount, ROUND(((jan_amount - dec_amount) / dec_amount) * 100, 2) AS mom_growth
+    FROM pivoted_data
+    WHERE dec_amount > 0 )
+SELECT cardtype,exptype,mom_growth
+FROM growth_calc
+ORDER BY mom_growth DESC
+LIMIT 1;
+
+
+PYSPARK --RDD
+
+from pyspark import SparkContext
+from datetime import datetime
+
+sc = SparkContext.getOrCreate()
+
+file_path = "/content/Credit card transactions - India - Simple.csv"
+rdd = sc.textFile(file_path)
+
+header = rdd.first()
+data = rdd.filter(lambda line: line != header)
+
+def parse_date(date_str):
+    for fmt in ["%d-%b-%y", "%-d-%b-%y"]: 
+        try:
+            return datetime.strptime(date_str.strip(), fmt)
+        except:
+            continue
+    return None
+
+def parse_line(line):
+    try:
+        parts = [p.strip() for p in line.split(",")]
+        date = parse_date(parts[2])
+        if not date:
+            return None
+        ym = date.strftime("%Y-%m")
+        card_type = parts[3]
+        exp_type = parts[4]
+        amount = float(parts[6])
+        return ((card_type, exp_type, ym), amount)
+    except:
+        return None
+
+parsed = data.map(parse_line).filter(lambda x: x is not None)
+
+monthly = parsed.reduceByKey(lambda a, b: a + b)
+
+grouped = monthly.map(lambda x: ((x[0][0], x[0][1]), (x[0][2], x[1]))).groupByKey()
+
+def compute_mom_growth(kv):
+    key, vals = kv
+
+    vals = sorted(vals, key=lambda x: x[0])
+    results = []
+    for i in range(1, len(vals)):
+        prev_ym, prev_amt = vals[i-1]
+        curr_ym, curr_amt = vals[i]
+        if curr_ym == "2014-01":
+            try:
+                growth = (curr_amt - prev_amt) / prev_amt if prev_amt != 0 else 0.0
+                results.append(((key[0], key[1], 2014, 1), growth))
+            except:
+                continue
+    return results
+
+growth = grouped.flatMap(compute_mom_growth)
+
+top = growth.sortBy(lambda x: -x[1]).take(1)
+
+if top:
+    (card, exp, y, m), growth_val = top[0]
+    print(f"Highest MoM growth in Jan 2014: Card = {card}, Exp = {exp}, Growth = {growth_val*100:.2f}%")
+else:
+    print("No valid MoM growth found for Jan 2014.")
+
+
+
+
+----------------------------------------------------------------------------------------------------------------
+QUERY 8 -----
+
+SPARKSCALA
+val format = data.withColumn("date_parsed", to_date(col("Date"), "d-MMM-yy")).withColumn("date_formatted",date_format(col("date_parsed"), "dd-MMM-yy"))
+
+val finaldata = format.drop("date_parsed" , "Date")
+
+val datafinal = finaldata.withColumnRenamed("date_formatted", "Date")
+
+val dfwithdate = datafinal.withColumn("Date", to_date(col("Date"), "dd-MMM-yy"))
+
+val dfweekend = dfwithdate.withColumn("day_of_week", dayofweek(col("Date
+"))).filter(col("day_of_week").isin(1, 7))
+
+val dfcity = dfweekend.groupBy("City").agg(sum("Amount").alias("totalSpend"),count("*").alias("transaction")).withColumn("Ratio", col("totalSpend")/col("transaction"))
+
+val finalcity = dfcity.orderBy(desc("Ratio")).limit(1)
+
+finalcity.select(col("City")).show()
+
+pyspark
+
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, to_date, dayofweek, sum as _sum, count
+spark = SparkSession.builder.appName("CreditCardWeekendAnalysis")
+.config("spark.sql.legacy.timeParserPolicy", "LEGACY").getOrCreate()
+df = spark.read.option("header", True)
+.csv("/content/Credit card transactions - India - Simple.csv")
+df = df.withColumn("Amount", col("Amount").cast("int"))
+.withColumn("Date", to_date(col("Date"), "d-MMM-yy"))  
+weekend_df = df.withColumn("dayofweek", dayofweek("Date"))
+.filter((col("dayofweek") == 1) | (col("dayofweek") == 7))
+agg_df = weekend_df.groupBy("City").agg(_sum("Amount")
+.alias("total_spend"),count("*").alias("total_transactions"))
+ratio_df = agg_df.withColumn("spend_transaction_ratio", 
+                             col("total_spend") / col("total_transactions"))
+top_10_cities = ratio_df.orderBy(col("spend_transaction_ratio").desc()).limit(1)
+top_10_cities.show(truncate=False)
+top_10_cities.coalesce(1).write.option("header", True).csv("/content/Q8py2.csv")
+
+----------------------------------------------------------------------------------------------------------------
+QUERY 9 -----
+
+pyspark
+
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, to_date, row_number, datediff
+from pyspark.sql.window import Window
+spark = SparkSession.builder.appName("Top10CitiesToReach500Txns").getOrCreate()
+df = spark.read.csv("/content/Credit card transactions - India - Simple.csv",header=True,inferSchema=True)
+df = df.withColumn("Date", to_date(col("Date"), "dd-MMM-yy"))
+window_city = Window.partitionBy("City").orderBy("Date")
+df_with_rn = df.withColumn("rn", row_number().over(window_city))
+first_txn = df_with_rn.filter(col("rn") == 1).select(col("City").alias("City_first"), col("Date").alias("FirstDate"))
+txn_500 = df_with_rn.filter(col("rn") == 500).select(col("City").alias("City_500"), col("Date").alias("Date500"))
+joined = txn_500.join(first_txn, txn_500.City_500 == first_txn.City_first).withColumn("days_to_500", datediff(col("Date500"), col("FirstDate"))).select(col("City_500").alias("City"), "days_to_500")
+top_20_cities = joined.orderBy(col("days_to_500").asc()).limit(20)
+print("📌 Top 20 cities that reached 500 transactions in the least number of days:")
+top_20_cities.show(truncate=False) 
+top_20_cities.coalesce(1).write.option("header", True).csv("/content/Q9py1.csv")
+
+PYSPARK RDD
+
+from pyspark import SparkContext
+from datetime import datetime
+sc = SparkContext.getOrCreate()
+
+dataRdd = sc.textFile("/content/Sprint Data/Credit card transactions - India - Simple.csv")
+header = dataRdd.first()
+data = dataRdd.filter(lambda line: line != header)
+
+def dataDividing(line):
+    try:
+        parts = line.split(",")
+        city = parts[1].strip().replace('"', '')
+        date = datetime.strptime(parts[3].strip(), "%d-%b-%y")
+        return (city, date)
+    except:
+        return None
+
+parsed = data.map(dataDividing).filter(lambda x: x is not None)
+
+def combCreation(date):
+    return [date]
+
+def combMerge(acc, date):
+    acc.append(date)
+    return acc
+
+def combsMerge(acc1, acc2):
+    acc1.extend(acc2)
+    return acc1
+
+combined = parsed.combineByKey(combCreation, combMerge, combsMerge)
+
+def getDiff500(city_dates):
+    city, dates = city_dates
+    if len(dates) >= 500:
+        sorted_dates = sorted(dates)
+        diff = (sorted_dates[499] - sorted_dates[0]).days
+        return (city, diff)
+    else:
+        return None
+
+city_diffs = combined.map(getDiff500).filter(lambda x: x is not None)
+
+fastestCity = city_diffs.takeOrdered(1, key=lambda x: x[1])
+
+print("City that reached 500th transaction the fastest: ['City Name', Number of days]")
+print(fastestCity)
+
+result = sc.parallelize([
+    "City Name , Days",
+    f"{fastestCity[0][0]} , {fastestCity[0][1]}"
+])
+
+result.collect()
+
